@@ -7,8 +7,8 @@ from services.scraper.twikit_scraper import TwikitScraper
 
 class IngestionService:
 
-    def __init__(self):
-        self.scraper = TwikitScraper()
+    def __init__(self, **scraper_options):
+        self.scraper = TwikitScraper(**scraper_options)
 
     async def ingest_topic(
         self,

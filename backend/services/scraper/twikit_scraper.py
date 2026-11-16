@@ -14,6 +14,7 @@ import asyncio
 import random
 import time
 import csv
+from pathlib import Path
 from models.tweet import Tweet
 
 
@@ -24,7 +25,9 @@ MIN_YIELD_PER_CYCLE = 20   # stop — soft-throttled or exhausted
 
 class TwikitScraper(ScraperInterface):
 
-    def __init__(self):
+    def __init__(self, strict_errors=False, export_directory=None):
+        self.strict_errors = strict_errors
+        self.export_directory = Path(export_directory) if export_directory else Path(".")
         self.client = Client(
             'en-US',
             user_agent="Mozilla/5.0 (X11; Linux x86_64; rv:153.0) Gecko/20100101 Firefox/153.0"
@@ -82,7 +85,8 @@ class TwikitScraper(ScraperInterface):
         else: raise ValueError(f"Unknown mode: {mode}")
 
         try:
-            with open("last_run.csv", "w", newline="", encoding="utf-8") as f:
+            self.export_directory.mkdir(parents=True, exist_ok=True)
+            with (self.export_directory / "last_run.csv").open("w", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(f, fieldnames=[
                     "tweet_id", "text", "author", "created_at",
                     "favorite_count", "retweet_count", "language",
@@ -99,7 +103,7 @@ class TwikitScraper(ScraperInterface):
                         "language": t.language,
                     })
 
-            with open("last_run_rejected.csv", "w", newline="", encoding="utf-8") as f:
+            with (self.export_directory / "last_run_rejected.csv").open("w", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(f, fieldnames=["tweet_id", "text", "reason", "language"])
                 writer.writeheader()
                 writer.writerows(rejected)
@@ -230,12 +234,16 @@ class TwikitScraper(ScraperInterface):
                 await asyncio.sleep(random.uniform(4, 8))  # base pacing between pages
 
         except TooManyRequests as e:
+            if self.strict_errors:
+                raise RuntimeError("X rate limited the collection request.") from e
             rate_limited = True
             print(f"Rate limited after {page_count} pages, {len(results)} tweets collected. "
                   f"Terminating run — not retrying.")
             self._dump_rate_limit_info(e)
 
         except Exception as e:
+            if self.strict_errors:
+                raise RuntimeError("The X collection request failed.") from e
             print(f"Unexpected error after {page_count} pages, {len(results)} tweets collected: {e}")
 
         print(f"Fetched relevant: {len(results)}, Dropped irrelevant: {dropped_irrelevant}, "
